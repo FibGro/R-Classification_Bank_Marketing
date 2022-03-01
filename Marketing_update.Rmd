@@ -1,0 +1,1165 @@
+---
+title: "Bank Marketing Campaign"
+author: "Fibry Gro"
+date: "`r format(Sys.Date(), '%B %e, %Y')`"
+output: 
+  rmdformats::downcute:
+    toc_depth: 4
+    toc_float: 
+        collapsed: True
+    highlight: tango
+    default_style: dark
+---
+
+# Introduction 
+
+```{r, echo=FALSE, fig.height=8}
+knitr::include_graphics("bank.png")
+```
+[Source of The Picture](www.bankbound.com/blog/bank-advertising-ideas/)
+
+
+The objective of a marketing campaign is to promote a product, generate brand awareness and increase sales. In the banking business, which is a highly competitive market, the campaign conducts frequently and sometimes assigns a significant number of resources or labors. The advertising of the campaign can be done through different types of media or interactive methods, such as video conferences or calling. The campaign mostly involves a high budget. Based on [the financial brand](https://thefinancialbrand.com/36606/bank-marketing-budgets-2014/), the marketing budget of US bank is approximately at 0.08% from the asset. It means if the average asset size for US banks is 2.9 US billion, thus the advertising cost is approximately 2.1 US million. Therefore, especially today, the data becomes one of the keys to increasing efficiency in the marketing campaign because, with more data, customers' preferences towards the product can be correctly predicted. 
+
+# Objective 
+
+This project is part of the "learn by building" classification II section. The objectives are to find what variables are important for obtaining a subscriber and to create a model that can correctly predict a potential client's preference towards the term deposit (product). The models are created by using Naive Bayes, Decision Tree and Random Forest method. 
+
+# Dataset Information
+
+The dataset is collected from [the UCI website](http://archive.ics.uci.edu/ml/datasets/Bank+Marketing#). The data is related to marketing campaigns of a Portuguese bank. The campaign is through phone calls. We use "bank-full.csv" dataset, which contains 45,211 rows and 17 variables. Our target variable is y (status of client's subscription). The input variables are included: 
+
+Personal client data :
+
+- Age : age of the client (numeric)
+- Job : type of job (categorical: 'admin.', 'blue-collar', 'entrepreneur', 'housemaid', 'management', 'retired', 'self-employed', 'services', 'student', 'technician', 'unemployed', 'unknown')
+- Marital : marital status (categorical: 'divorced', 'married', 'single')
+- Education (categorical: 'secondary','tertiary','primary', 'unknown')
+- Balance : balance amount (numeric)
+- Default: has credit in default? (categorical: 'no', 'yes')
+- Housing: has housing loan? (categorical: 'no', 'yes')
+- Loan: has personal loan? (categorical: 'no', 'yes')
+
+Related to the last contact of the current campaign :
+
+- Contact: contact communication type (categorical: 'cellular','telephone', 'unknown')
+- Month: last contact month of year (categorical: 'Jan', 'feb', 'mar', ..., 'nov', 'dec')
+- Day: last contact day of the week (numeric)
+- Duration: last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+
+Other attributes :
+
+- Campaign: number of contacts performed during this campaign and for this client (numeric, includes the last contact)
+- Pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)
+- Previous: number of contacts performed before this campaign and for this client (numeric)
+- Poutcome: outcome of the previous marketing campaign (categorical: 'failure', 'other', 'success', 'unknown')
+
+**Output variable** (desired target) : y - has the client subscribed a term deposit? (binary: 'yes', 'no')
+
+# Data Preparation 
+
+## Load Libraries 
+
+Load all libraries that used in this project. 
+
+```{r, warning=FALSE,message=FALSE}
+library(caret)
+library(e1071)
+library(dplyr)
+library(ggplot2)
+library(wesanderson)
+library(GGally)
+library(partykit)
+library(tidyr)
+library(tidymodels)
+library(tidyverse)
+library(skimr)
+library(ROCR)
+library(pROC)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(plotly)
+library(randomForest)
+library(vip)
+```
+
+
+## Read Data
+
+We use "bank-full.csv" for our dataset. We read the dataset by using function `read.csv()` and change data type characters into a factor by using  `stringsAsFactors = T`. Then, we assign it as a new object called `bank`. 
+
+```{r}
+bank <- read.csv("bank-full.csv", sep = ";", stringsAsFactors = T)
+```
+
+## Observe Data
+
+Let's observe the dataset using the function `glimpse()`. 
+
+- There are 45,211 rows and 17 columns. 
+- No requirement to change the data type. 
+
+```{r}
+glimpse(bank)
+```
+
+## Missing Value and Summary Dataframe
+
+We can check the missing values and summary of dataframe by using functions `skim()` and `partition()`.
+
+```{r}
+bank %>%
+  skim() %>%
+  partition()
+```
+
+The output shows there are no missing values in dataframe. The dataframe contains 10 categorical variables and 7 numeric variables. In the numerical variables, age, balance, duration, campaign, pdays, previous and previous have a right skew distribution. In other side, it is quite hard to observe the composition in categorical variables. We can use barplot to observe the frequency for categorical variables and the histogram to observe distribution of numerical variables. 
+
+### Categorical Variables 
+
+The below plots show frequency of each categorical variables. 
+
+```{r warning=FALSE, echo= FALSE, message=FALSE}
+
+c.marital <- as.data.frame(prop.table(table(bank$marital)))
+
+plot1 <- 
+  c.marital %>%
+  ggplot(aes(x = reorder(Var1, -Freq), y = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Marital Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.job <- as.data.frame(prop.table(table(bank$job)))
+
+
+plot2 <- 
+  c.job %>%
+  ggplot(aes(y = reorder(Var1, Freq), x = Freq, fill=Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Job Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette(12, name = "Darjeeling1", type = "continuous"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.education <- as.data.frame(prop.table(table(bank$education)))
+
+plot3 <- 
+  c.education %>%
+  ggplot(aes(y = reorder(Var1, Freq), x = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Education Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.default <- as.data.frame(prop.table(table(bank$default)))
+
+plot4 <- 
+  c.default %>%
+  ggplot(aes(x = reorder(Var1, -Freq), y = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Default Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.housing <- as.data.frame(prop.table(table(bank$housing)))
+
+plot5 <- 
+  c.housing %>%
+  ggplot(aes(x = reorder(Var1, -Freq), y = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Housing Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.loan <- as.data.frame(prop.table(table(bank$loan)))
+
+plot6 <- 
+  c.loan %>%
+  ggplot(aes(x = reorder(Var1, -Freq), y = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Loan Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.contact <- as.data.frame(prop.table(table(bank$contact)))
+
+plot7 <- 
+  c.contact %>%
+  ggplot(aes(x = reorder(Var1, -Freq), y = Freq, fill = Var1)) +
+                     geom_col(fill="#007200") +
+                     labs(title="Contact Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+c.poutcome <- as.data.frame(prop.table(table(bank$poutcome)))
+
+plot8 <- 
+  c.poutcome %>%
+  ggplot(aes(y = reorder(Var1, Freq), x = Freq, fill = Var1)) +
+                     geom_col(fill= "#007200") +
+                     labs(title="Poutcome Class",
+       y="",
+       x="")+
+  #scale_fill_manual(values = wes_palette("Darjeeling1"))+
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 14, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black', vjust = 0.5),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")
+
+  
+```
+
+
+```{r, fig.height=8, fig.width=8, warning=FALSE, echo= FALSE}
+
+library(ggpubr)
+
+ggarrange(plot2, plot3, plot8, plot5, plot6, plot4, plot1, plot7, 
+          ncol = 3, nrow = 3)
+```
+
+>Insight : 
+>
+- There is a variety in terms of occupations in the database. Almost 40% of the customers have profession as a management and a blue-collar job. 
+- A half of the clients have a secondary education. 
+- More than half of the clients do not have personal loan. 
+- The status of clients are mostly married. 
+- Approximately 70% of the communication with client related to a campaign is through the mobile phone. 
+- There is a significant difference in the default class. Most of the customers do not have default. It is normal, since the bank prefers to have business with customers who do not have credit default.
+
+### Numerical Variables 
+
+The below plots show distribution of each numerical variables. 
+
+```{r fig.height=8, fig.width=8, echo=FALSE, message=FALSE}
+
+# Transform the dataset into longer direction by using `pivot_longer()` and assign it as new dataframe called `bank_long`
+bank_long <- pivot_longer(data=bank, cols = c(age, balance,day, duration, campaign, pdays, previous))
+
+bank_long1 <- bank_long %>% 
+  dplyr::select (name, value)
+
+# Create a boxplot from dataframe 'bank_long'.
+bank_long1 %>% 
+ggplot(aes(x = value, fill=name)) +
+  geom_histogram(color="black")+
+  facet_wrap(~name, scales = "free", nrow=6)+
+  theme_bw()+
+  scale_fill_manual(values = wes_palette(10, name = "Darjeeling1", type = "continuous"))+
+  labs(title="Boxplot For Predictors",
+       y="",
+       x="Values")+
+      theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+      theme(plot.title = element_text(size= 17, color = 'black'),
+            axis.title.x = element_text(size=12, color = 'black'),
+            axis.title.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            legend.position = "")+
+    theme(strip.background =element_rect(fill="black"))+
+    theme(strip.text = element_text(colour = 'white', size=12))
+```
+
+>Insight:
+> 
+- The majority of the bank's clients have ages between 25 - 50 and the mean client's age is 39. Thus, the middle-aged might be a target customer.
+- The balance, pdays, campaign and previous have a right-skew distribution as their values are mostly distributed on the low side. Those variables might be a variable with near-zero variance. 
+
+## Feature Selection
+
+>[Near-zero variance means that the] fraction of unique values over the sample size is low (say 10%) [...] [and the] ratio of the frequency of the most prevalent value to the frequency of the second most prevalent value is large (say around 20). If both of these criteria are true and the model in question is susceptible to this type of predictor, it may be advantageous to remove the variable from the model.
+>
+>-- Kuhn, M., & Johnson, K. (2013). Applied predictive modeling, New York, NY: Springer.
+
+To confirm near zero variance, we can use function `nearZeroVar()`. 
+
+```{r}
+rmarkdown::paged_table(as.data.frame(nearZeroVar(bank, saveMetrics = T)))
+```
+
+- The table shows that `pdays` and `default` are indeed near zero variance. Thus, we can drop those variables. 
+
+- As mention in dataset information, "the duration variable highly effects with target variable. Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model". Based on this information, we also drop this variable. 
+
+```{r}
+bank <- bank %>% 
+  dplyr::select (-c(pdays, default, duration))
+```
+
+## Correlation 
+
+The correlation for numerical variables can be observed by using function `ggcorr()`
+
+```{r warning=FALSE}
+ggcorr(bank, 
+       label = T, 
+       size = 3, hjust = 0.1, color='black', angle=90,
+       layout.exp = 3,
+       cex = 3)+
+labs(title = 'Correlation Matrix Predictors')+
+theme(plot.title = element_text(size=20),
+      legend.text = element_text(size = 12))
+```
+
+>Insight: There is almost no correlation between each variable. Campaign - day and balance - age have a weak positive correlation. 
+
+# Cross Validation 
+
+## Split Train-Test Data
+
+We split the dataset into train and test by using function `sample()`. The train dataset will contain 80% of the `bank` dataframe. Train data is used to train the model, while the rest is used to test the model. 
+
+```{r, warning= FALSE}
+# Lock random samples 
+RNGkind(sample.kind = "Rounding")
+set.seed(100)
+
+# Create train dataset with 80% of total row in dataframe and the rest is used to test the model. 
+insample <- sample(nrow(bank), nrow(bank)*0.8)
+
+# Create bank_train as our train data
+bank_train <- bank[insample,]
+
+# Create bank_test as our test data
+bank_test <- bank[-insample,]
+```
+
+Let's check the class proportion of `y` in the train dataset. The class proportion of the variable target is 9: 1, which is considered a significant imbalance. 
+
+```{r}
+round(prop.table(table(bank_train$y)),2)
+```
+
+## Balance Target Class
+
+In this section, we will balance the proportion class in the target variable of the train dataset (bank_train). It is crucial to have a balanced class proportion so that the model can predict well in both classes. There are four methods for balancing class proportions:
+
+- Upper-sampling: The method increases the number of observations from the minority class to balance the classes
+- Down-sampling: The method reduces the number of observations from the majority class to balance the classes.
+- Both sampling: The method is a combination of over and under-sampling. 
+- [Synthetic data generation](https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/): This method overcomes imbalances by generating artificial data. It generates a random set of minority class data to shift the classifier's learning bias towards the minority class.
+
+Since we don't want to lose information in our dataset, we use the upper-sampling by using function `upSample()`. 
+
+```{r, warning=FALSE}
+
+# Lock random samples 
+RNGkind(sample.kind = "Rounding")
+set.seed(100)
+
+# Create a balance target of bank_train and assign as `bank_train_up` 
+bank_train_up <- upSample(x = bank_train %>% dplyr::select(-y), 
+                              y = bank_train$y,
+                              yname= "y")
+
+# Check the proportion of target class of `bank_train_down`.
+table(bank_train_up$y)
+```
+The above output shows that the target class in bank_train_up is balanced, with the number of samples for each class being 31,932 samples. We will use this train dataset to create the model. 
+
+# Naive Bayes 
+
+[Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) is an algorithm of simple "probabilistic classifiers" based on Bayes' theorem. The model considers independence assumptions between predictor variables. The model is easy to be used and fast to build a real-time prediction. It can handle both discrete and continuous target variables. However, the model suffers from skewness due to data scarcity. 
+
+## Modelling
+
+We create a Naive Bayes model by using function `naiveBayes()` with `bank_train_up` as our data and add `laplace =1` to prevent skewness.  
+
+```{r}
+model_naive <- naiveBayes(y~., bank_train_up, laplace = 1)
+```
+
+## Prediction 
+
+The prediction can be generated by using function `predict()` with `bank_test` as our newdata. 
+
+```{r}
+pred_naive <- predict(object = model_naive, newdata=bank_test, type="class")
+```
+
+## Model Evaluation 
+
+### ROC and AUC
+
+[The empirical ROC curve](https://ncss-wpengine.netdna-ssl.com/wp-content/themes/ncss/pdf/Procedures/NCSS/Comparing_Two_ROC_Curves-Paired_Design.pdf) is a probability curve showing the true positive rate (sensitivity) versus the false positive rate (1 - specificity) for all possible cut-off values. The AUC (Area Under Curve) measures how much the model is capable to distinguish between classes. The higher the AUC value, the better the model is at distinguishing positive and negative classes.  
+
+
+```{r}
+# Create a probability prediction from `model_naive`
+prob_naive <- predict(object = model_naive, newdata=bank_test, type="raw")
+
+# Create a prob and label from prob_naive. 
+roc_bank <- data.frame(prob=prob_naive[,2],
+                       label=as.numeric(bank_test$y=="yes"))
+
+# Create an object prediction 
+prediction_roc_bank <- prediction(predictions = roc_bank$prob, 
+                                   labels = roc_bank$label) 
+# Create an ROC plot 
+plot(ROCR::performance(prediction.obj = prediction_roc_bank, 
+                 measure = "tpr", 
+                 x.measure = "fpr"),main = "ROC Naive Bayes", col="#519259")
+abline(a = 0, b = 1)
+
+# Obtain the AUC 
+auc_naive  <- ROCR::performance(prediction.obj=prediction_roc_bank, measure = "auc")
+auc_naive@y.values[[1]]
+
+```
+
+> Insight: The AUC of the model is 0.7516 (AUC is between 0.5 and 1), implying that the model can distinguish between positive and negative classes. 
+
+### Confusion Matrix 
+
+The confusion matrix is used to describe the performance of a classification algorithm. Four metrics to evaluate classifiers are Accuracy, Sensitivity, Specificity and Precision. 
+
+- Accuracy is defined as the ratio of correctly predicted cases by the total cases. 
+
+$$
+Accuracy = \frac{TP+TN}{TP + TN +FP+FN}
+$$
+
+- Precision or Pos Pred Value describes how many of the correctly predicted cases turned out to be positive. This metric determines whether our model is reliable or not. 
+
+$$
+Precision = \frac{TP}{TP + FP}
+$$
+
+- Recall or Sensitivity describes how many of the actual positive cases we were able to predict correctly with our model.
+
+$$
+Recall = \frac{TP}{TP + FN}
+$$
+
+- Specificity describes how many of the actual negative cases we are able to predict correctly with our model.  
+
+$$
+Specificity = \frac{TN}{TN + FP}
+$$
+
+> Insight:
+> In this project, the expected model is a model that can correctly predict the customer subscription of term deposit product. The metric to be used in this project is `accuracy`, where the model is good to classify customer's preferences based on several given predictors. However, depending on the objective of the bank, the other metrics can also be used as preferences. The `precision` value can be used when the bank wants to improve the effectiveness of the campaign by reducing the calling time and labours cost. Thus, the bank's staff will give more attention to the interested customers, instead of non-interested customers. The `sensitivity` value can be used when the bank wants to obtain as many customers so that the bank does not lose an opportunity or revenue. 
+
+
+Let's check the summary of the confusion matrix for `pred_naive` by using function `confusionMatrix()`. We define `yes` as positive class. 
+
+```{r}
+con_naive_test <- confusionMatrix(data= pred_naive, reference = bank_test$y, positive="yes")
+con_naive_test 
+```
+> Insights:
+>
+- The confusion matrix shows that the model using the Naive Bayes method has an accuracy value of 0.6917. It implies that the model can predict 69.17% of the test data correctly.
+- The precision value shows 0.2269 (low value), implying that only 22.69% of the correctly predicted cases turned out to be positive. It also means that the model is bad at classifying the positive predicted cases.
+- The sensitivity and specificity values are 68.47% and 69.26%, respectively. It implies that actual positive and negative classes are correctly classified.
+
+## Over or Underfitting
+
+Underfitting is a condition where the model is unable to capture accurately the relationship between the input and output of variables. This condition generates a high error rate in both train and test datasets. It mostly happens when the model is too simple, thus the model required more input variables or less regularization. Overfitting is the condition where the model has too much complexity, generating a high error on the test dataset and resulting in a model with low bias but high variance. 
+
+We will observe our model for under and overfitting conditions. This can be done by comparing the performance metrics of train and test data. 
+
+```{r}
+# Prediction for train_data
+pred_naive_train <- predict(object=model_naive, newdata=bank_train_up, type="class")
+
+# confusion matrix data train
+con_naive_train <- confusionMatrix(pred_naive_train,
+                bank_train_up$y,
+                positive="yes")
+```
+
+
+```{r, echo=FALSE}
+# Model test data
+m <- as.data.frame(con_naive_test$overall[1])
+colnames(m) <- c("Model Naive Test")
+n<- as.data.frame(con_naive_test$byClass[1:3])
+colnames(n) <- c("Model Naive Test")
+mn<-round(rbind(m,n),4)
+
+# Model train data
+o <- as.data.frame(con_naive_train$overall[1])
+colnames(o) <- c("Model Naive Train")
+p<- as.data.frame(con_naive_train$byClass[1:3])
+colnames(p) <- c("Model Naive Train")
+op<-round(rbind(o,p),4)
+
+class1 <- cbind(op,mn)
+rmarkdown::paged_table(class1)
+```
+> Insight: 
+>
+- The accuracy, sensitivity and specificity values in both model are relatively close (optimum). Thus, we can accept those value in this model. 
+- In other side, the precision in model test is significant lower than in model train. This means the model can be classified as an overfitted model in term of precision value. 
+
+## Performance Trade-Off
+
+We can improve our model by observing the performance trade-off. First, we create a probability prediction of Naive Bayes model by using `type=raw`. Then, create a dataframe `naive_table` contains the model prediction (bank_pred), the probability prediction of negative class (bank_eprob) and the probability prediction of positive class(bank_pprob).
+
+The performance trade-off plot code follows the code from this [link](https://rpubs.com/nabiilahardini/wine-ndf)
+
+```{r}
+# Probability prediction of Naive Bayes model. 
+prob_naive <- predict(object = model_naive, newdata=bank_test, type="raw")
+
+# Create dataframe contains a model prediction (bank_pred), probability prediction of negative class (bank_eprob) and probability of positive class (bank_pprob)
+naive_table <- dplyr::select(bank_test, y) %>%
+  bind_cols(bank_pred = pred_naive) %>% 
+  bind_cols(bank_eprob = round(prob_naive[,1],4)) %>% 
+  bind_cols(bank_pprob = round(prob_naive[,2],4))
+```
+
+Create a loop to observe performance trade off. 
+
+```{r,  warning=FALSE}
+
+performa <- function(cutoff, prob, ref, postarget, negtarget) 
+{
+  predict <- factor(ifelse(prob >= cutoff, postarget, negtarget))
+  conf <- caret::confusionMatrix(predict , ref, positive = postarget)
+  acc <- conf$overall[1]
+  rec <- conf$byClass[1]
+  prec <- conf$byClass[3]
+  spec <- conf$byClass[2]
+  mat <- t(as.matrix(c(rec , acc , prec, spec))) 
+  colnames(mat) <- c("recall", "accuracy", "precicion", "specificity")
+  return(mat)
+}
+
+co <- seq(0.01,0.80,length=100)
+result <- matrix(0,100,4)
+
+for(i in 1:100){
+  result[i,] = performa(cutoff = co[i], 
+                     prob = naive_table$bank_pprob, 
+                     ref = naive_table$y, 
+                     postarget = "yes", 
+                     negtarget = "no")
+}
+
+plot_naive <- data_frame("Recall" = result[,1],
+           "Accuracy" = result[,2],
+           "Precision" = result[,3],
+           "Specificity" = result[,4],
+                   "Cutoff" = co) %>% 
+  gather(key = "performa", value = "value", 1:4) %>% 
+  ggplot(aes(x = Cutoff, y = value, col = performa)) +
+  geom_line(lwd = 1.5) +
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+  scale_color_manual(values = wes_palette(4, name = "Darjeeling1", type = "continuous")) +
+  labs(title = "Performance Trade-Off") +
+  theme(legend.position = "top", 
+            plot.title = element_text(size= 17, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=14, color = 'black'),
+            axis.title.y = element_text(size = 14, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black'),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"))
+
+
+ggplotly(plot_naive)
+```
+
+> Insight: 
+> 
+- From the plot, the intersection point between sensitivity and specificity is at 0.49 cut-offs (probability threshold) or almost at the default threshold. 
+- At this point, it will not provide the highest accuracy. However, it will provide an unbiased accuracy metric value. This means that we do not need to change our threshold. 
+- The plot also suggests that there is a trade-off between the sensitivity and specificity values. If the threshold is less than 0.49, we would obtain higher sensitivity and lower specificity, vice versa, with a threshold between 0.49 and 0.80.
+
+# Decision Tree
+
+[Based on Wikipedia](https://en.wikipedia.org/wiki/Decision_tree_learning), decision tree is the most popular machine learning algorithms due to its simplicity and intelligibility. Decision tree can be used to predict when the target variable is the class (discrete) or a real number (numeric). The classification tree structures consists of leaves, which represent class labels, and branches, which represent connection of variables that lead to those class labels. The main idea of the decision tree is to obtain variables that returns the highest information gains or the most homogeneous branches. 
+
+## Modelling
+
+Now, we create a decision tree model by using `rpart()`. 
+
+```{r}
+set.seed(100)
+
+# Create a decision tree model 
+model_dt <- rpart(formula = y ~., data = bank_train_up, method = "class")
+```
+
+
+## Interpretation 
+
+We can visualize decision tree by using function `fancyRpartPlot()`. Then, we observe the important variables in the model by using function `vip()`
+
+```{r}
+# Visualize the decision tree
+fancyRpartPlot(palettes = "Reds", model_dt, type=4, sub = NULL)
+
+# Importance Variable
+vip(model_dt, num_features = 10, scale = TRUE, mapping = aes_string(fill = "Variable"), aesthetics = list(fill = "#007200"))
+
+```
+
+> Insight : 
+>
+- Based on the decision tree, the poutcome becomes the root of a tree, implying that this variable has the highest information gain. 
+- The model is considered simple with five interior nodes and seven terminal nodes. 
+- The potcome, month, contact and age are the most important predictors of y.
+
+## Prediction 
+
+The prediction can be generated by using function `predict()` with `bank_test` as our newdata. 
+
+```{r}
+pred_dt <-predict(object=model_dt, newdata=bank_test, type="class")
+```
+
+## Model Evaluation 
+
+### ROC and AUC
+
+```{r}
+# Create a probability prediction from `model_dt`
+prob_dt <- predict(object = model_dt, newdata=bank_test, type="prob")
+
+# Create a prob and label from prob_dt. 
+roc_dt <- data.frame(prob=prob_dt[,2],
+                     label=as.numeric(bank_test$y=="yes"))
+
+# Create an object prediction 
+prediction_roc_dt <- prediction(predictions = roc_dt$prob, 
+                                   labels = roc_dt$label) 
+# Create an ROC plot 
+plot(ROCR::performance(prediction.obj = prediction_roc_dt, 
+                 measure = "tpr", 
+                 x.measure = "fpr"),main = "ROC Decision Tree", col="#519259", print.auc=T)
+abline(a = 0, b = 1)
+
+# Obtain the AUC 
+auc_dt  <- ROCR::performance(prediction.obj=prediction_roc_dt, measure = "auc")
+auc_dt@y.values[[1]]
+
+```
+
+> Insight: The AUC of the model is 0.7370 (AUC is between 0.5 and 1), implying that the model can distinguish between positive and negative classes. 
+
+### Confusion Matrix
+
+```{r}
+con_dt_test <- confusionMatrix(data=pred_dt, reference=bank_test$y, positive="yes")
+con_dt_test
+```
+> Insights:
+>
+- The accuracy value of 0.7954, impliying that the model can predict 79.54% of the test data correctly.
+- The precision value shows 0.2938, implying that 29.38% of the correctly predicted cases turned out to be positive. It also means that the model is bad at classifying the positive predicted cases.
+- The sensitivity and specificity values are 53.94% and 82.92%, respectively. It implies that most actual negative classes are correctly classified, as opposed to the positive class.
+
+## Over or Underfitting
+
+We will observe our model for under and overfitting conditions. This can be done by comparing the performance metrics of train and test data. 
+
+```{r}
+# Model prediction based on data train
+pred_dt_train <- predict(object=model_dt, newdata=bank_train_up, type="class")
+
+# Confusion matrix data train
+con_dt_train <- confusionMatrix(pred_dt_train,
+                bank_train_up$y,
+                positive="yes")
+```
+
+```{r, echo=FALSE}
+# Model test data
+m <- as.data.frame(con_dt_test$overall[1])
+colnames(m) <- c("Model DT Test")
+n<- as.data.frame(con_dt_test$byClass[1:3])
+colnames(n) <- c("Model DT Test")
+mn<-round(rbind(m,n),4)
+
+# Model train data
+o <- as.data.frame(con_dt_train$overall[1])
+colnames(o) <- c("Model DT Train")
+p<- as.data.frame(con_dt_train$byClass[1:3])
+colnames(p) <- c("Model DT Train")
+op<-round(rbind(o,p),4)
+
+class4 <- cbind(op,mn)
+rmarkdown::paged_table(class4)
+```
+> Insight: In terms of accuracy, sensitivity and specificity, the model is relatively optimum. However, if we depend on the precision value, the model will be categorized as an overfitted model because the precision value in test data is significantly lower than in train data. 
+
+## Performance Trade-Off
+
+Since the decision tree provide a normal size tree, we will not perform pre-pruning. However, we will try to tune the model by adjusting the threshold of probability of model prediction. 
+
+```{r, warning=FALSE, echo=FALSE}
+# Create dataframe contains a model prediction (bank_pred), probability prediction of negative class (bank_eprob) and probability of positive class (bank_pprob)
+dt_table <- dplyr::select(bank_test, y) %>%
+  bind_cols(bank_pred = pred_dt) %>% 
+  bind_cols(bank_eprob = round(prob_dt[,1],4)) %>% 
+  bind_cols(bank_pprob = round(prob_dt[,2],4))
+
+# Create a loop to visualize the performance trade-off
+performa <- function(cutoff, prob, ref, postarget, negtarget) 
+{
+  predict <- factor(ifelse(prob >= cutoff, postarget, negtarget))
+  conf <- caret::confusionMatrix(predict , ref, positive = postarget)
+  acc <- conf$overall[1]
+  rec <- conf$byClass[1]
+  prec <- conf$byClass[3]
+  spec <- conf$byClass[2]
+  mat <- t(as.matrix(c(rec , acc , prec, spec))) 
+  colnames(mat) <- c("recall", "accuracy", "precicion", "specificity")
+  return(mat)
+}
+
+co <- seq(0.01,0.80,length=100)
+result <- matrix(0,100,4)
+
+for(i in 1:100){
+  result[i,] = performa(cutoff = co[i], 
+                     prob = dt_table$bank_pprob, 
+                     ref = dt_table$y, 
+                     postarget = "yes", 
+                     negtarget = "no")
+}
+
+plot_dt <- data_frame("Recall" = result[,1],
+           "Accuracy" = result[,2],
+           "Precision" = result[,3],
+           "Specificity" = result[,4],
+                   "Cutoff" = co) %>% 
+  gather(key = "performa", value = "value", 1:4) %>% 
+  ggplot(aes(x = Cutoff, y = value, col = performa)) +
+  geom_line(lwd = 1.5) +
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+  scale_color_manual(values = wes_palette(4, name = "Darjeeling1", type = "continuous")) +
+  labs(title = "Performance Trade-Off") +
+  theme(legend.position = "top", 
+            plot.title = element_text(size= 17, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=14, color = 'black'),
+            axis.title.y = element_text(size = 14, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black'),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"))
+
+ggplotly(plot_dt)
+```
+
+Now, we can observe detailed metrics from this model and compare the results with the model using the default threshold. 
+
+```{r}
+# Classify a probability value into target classes.
+dt_table <- dt_table %>% 
+  mutate(tuning_pred = as.factor(ifelse(bank_pprob >= 0.4, "yes", "no")))
+
+con_dt_adj <- confusionMatrix(dt_table$tuning_pred, bank_test$y, positive="yes")
+```
+
+
+```{r, echo=FALSE}
+
+# Model t= 0.5 
+m <- as.data.frame(con_dt_test $overall[1])
+colnames(m) <- c("Model t = 0.5")
+n<- as.data.frame(con_dt_test $byClass[1:3])
+colnames(n) <- c("Model t = 0.5")
+mn<-round(rbind(m,n),4)
+
+# Model t =0.62
+o <- as.data.frame(con_dt_adj$overall[1])
+colnames(o) <- c("Model t = 0.4")
+p<- as.data.frame(con_dt_adj$byClass[1:3])
+colnames(p) <- c("Model t = 0.4")
+op<-round(rbind(o,p),4)
+
+class5 <- cbind(op,mn)
+rmarkdown::paged_table(class5)
+
+```
+> Insight: As illustrated in the plot, the intersection between specificity and sensitivity at 0.4 has a similar performance metrics value with model with threshold at 0.5. 
+
+# Random Forest 
+
+[Random Forest classifier](https://towardsdatascience.com/understanding-random-forest-58381e0602d2) consists of many decision trees that operate as an ensemble method. Each decision tree produces a class prediction. The majority of the votes becomes the model prediction. The concept behind the random forest is bagging (bootstrap and aggregation) and feature randomness when constructing each decision tree to create an uncorrelated forest of the tree. 
+
+## Modelling
+
+We create a random forest model by using function `train()` with `method="rf"`. [The K-fold cross validation](https://medium.datadriveninvestor.com/k-fold-cross-validation-6b8518070833) is used in this model. K-fold cross-validation splits the dataset into a K number of the fold, which each fold is used as a testing set at some point. To use K-fold, we need to specify the function `trainControl()` with `method="repeatedcv"`. The `number =5` means that there will be five folds or sets of split data.  
+
+Since the running time of the random forest model is quite long, it is wise to save the model into an RDS file.
+
+```{r}
+#set.seed(100)
+
+# Use k-fold cross-validation
+#ctrl <- trainControl(method="repeatedcv", number=5, repeats=3) 
+
+# Create a random forest model 
+#forest_up <- train(y ~., data=bank_train_up, method= "rf", trControl = ctrl)
+
+# Save the model into RDS file
+#saveRDS(forest_up, "forest_up.RDS")
+```
+
+After running the model and saved it into `model_rf`, we can read the file by using function `readRDS()` and observe the model. 
+
+```{r}
+# Read the forest_origin and assign it as a new abject called `model_rf`
+model_rf <- readRDS("forest_up.RDS")
+```
+
+## Interpretation 
+
+We can obtain the error of out-of-bag or unseen data and class error by calling `model_rf$finalModel`. Then, we can plot the model to observe the optimum `mtry`. 
+
+```{r}
+# Observe the model 
+model_rf$finalModel
+
+# Plot the model 
+plot(model_rf)
+```
+
+> Insight : 
+>
+- The output shows that the out-off-bag error in the model_rf is 2.25%, implying that the model has a high accuracy value of 97.75%.
+- Based on the plot, the model with mtry = 20 has the highest accuracy value when tested on data from bootstrap sampling. 
+
+
+We can also obtain the most important variables in the random forest model by using function `varImp()`. 
+
+```{r}
+varImp(model_rf)
+```
+
+> Insight : The table above indicates that the most important predictor variable for y is balance, followed by age and day. 
+
+## Prediction 
+
+The prediction can be generated by using function `predict()` with `bank_test` as our newdata. 
+
+```{r}
+pred_rf <-predict(object=model_rf, newdata=bank_test)
+```
+
+## Model Evaluation 
+
+### ROC and AUC
+
+```{r}
+# Create a probability prediction from `model_rf`
+prob_rf <- predict(object = model_rf, newdata=bank_test, type="prob")
+
+# Create a prob and label from prob_rf. 
+roc_rf <- data.frame(prob=prob_rf[,2],
+                     label=as.numeric(bank_test$y=="yes"))
+
+# Create an object prediction 
+prediction_roc_rf <- prediction(predictions = roc_rf$prob, 
+                                   labels = roc_rf$label) 
+# Create an ROC plot 
+plot(ROCR::performance(prediction.obj = prediction_roc_rf, 
+                 measure = "tpr", 
+                 x.measure = "fpr"),main = "ROC Random Forest", col="#519259", print.auc=T)
+abline(a = 0, b = 1)
+
+# Obtain the AUC 
+auc_rf  <- ROCR::performance(prediction.obj=prediction_roc_rf, measure = "auc")
+auc_rf@y.values[[1]]
+```
+
+> Insight: The AUC of the model is 0.776 (AUC is between 0.5 and 1), implying that the model can distinguish between positive and negative classes. 
+
+### Confusion Matrix
+
+```{r}
+con_rf_test <- confusionMatrix(as.factor(pred_rf), bank_test$y, positive="yes")
+con_rf_test
+```
+
+> Insights:
+>
+- The confusion matrix shows that the model using the random Forest method has an accuracy value of 0.8838, impliying that the model can predict 88.38% of the test data correctly.
+- The precision value shows 0.5014, implying that 50.14% of the correctly predicted cases turned out to be positive. 
+- The sensitivity and specificity values are 33.4% and 95.62%, respectively. It implies that most negative classes are correctly classified, as opposed to the positive class.
+
+## Over or Underfitting 
+
+We will observe our model for under and overfitting conditions. This can be done by comparing the performance metrics of train and test data. 
+
+```{r}
+# Model prediction based on data train
+pred_rf_train <- predict(object=model_rf, newdata=bank_train_up, type="prob")
+
+# confusion matrix data train
+con_rf_train <- confusionMatrix(pred_dt_train,
+                bank_train_up$y,
+                positive="yes")
+```
+
+```{r, echo=FALSE}
+# Model test data
+m <- as.data.frame(con_rf_test$overall[1])
+colnames(m) <- c("Model RF Test")
+n<- as.data.frame(con_rf_test$byClass[1:3])
+colnames(n) <- c("Model RF Test")
+mn<-round(rbind(m,n),4)
+
+# Model train data
+o <- as.data.frame(con_rf_train$overall[1])
+colnames(o) <- c("Model RF Train")
+p<- as.data.frame(con_rf_train$byClass[1:3])
+colnames(p) <- c("Model RF Train")
+op<-round(rbind(o,p),4)
+
+class6 <- cbind(op,mn)
+rmarkdown::paged_table(class6)
+```
+
+> Insight : The model has a high accuracy and specificity values in test data. However, the sensitivity and precision values in train data are higher than in test data. It implies that the model is an overfitted in term of those values. 
+
+## Performance Trade-Off
+
+we will try to tune the model by adjusting the threshold of probability of model prediction. 
+
+```{r, warning=FALSE, echo=FALSE}
+# Create dataframe contains a model prediction (bank_pred), probability prediction of negative class (bank_eprob) and probability of positive class (bank_pprob)
+rf_table <- dplyr::select(bank_test, y) %>%
+  bind_cols(bank_pred = pred_rf) %>% 
+  bind_cols(bank_eprob = round(prob_rf[,1],4)) %>% 
+  bind_cols(bank_pprob = round(prob_rf[,2],4))
+
+# Create a loop to visualize the performance trade-off
+performa <- function(cutoff, prob, ref, postarget, negtarget) 
+{
+  predict <- factor(ifelse(prob >= cutoff, postarget, negtarget))
+  conf <- caret::confusionMatrix(predict , ref, positive = postarget)
+  acc <- conf$overall[1]
+  rec <- conf$byClass[1]
+  prec <- conf$byClass[3]
+  spec <- conf$byClass[2]
+  mat <- t(as.matrix(c(rec , acc , prec, spec))) 
+  colnames(mat) <- c("recall", "accuracy", "precicion", "specificity")
+  return(mat)
+}
+
+co <- seq(0.01,0.80,length=100)
+result <- matrix(0,100,4)
+
+for(i in 1:100){
+  result[i,] = performa(cutoff = co[i], 
+                     prob = rf_table$bank_pprob, 
+                     ref = rf_table$y, 
+                     postarget = "yes", 
+                     negtarget = "no")
+}
+
+plot_dt <- data_frame("Recall" = result[,1],
+           "Accuracy" = result[,2],
+           "Precision" = result[,3],
+           "Specificity" = result[,4],
+                   "Cutoff" = co) %>% 
+  gather(key = "performa", value = "value", 1:4) %>% 
+  ggplot(aes(x = Cutoff, y = value, col = performa)) +
+  geom_line(lwd = 1.5) +
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme_set(theme_minimal() + theme(text = element_text(family="Arial Narrow"))) +
+  scale_color_manual(values = wes_palette(4, name = "Darjeeling1", type = "continuous")) +
+  labs(title = "Performance Trade-Off") +
+  theme(legend.position = "top", 
+            plot.title = element_text(size= 17, color = 'black', face ='bold'),
+            axis.title.x = element_text(size=14, color = 'black'),
+            axis.title.y = element_text(size = 14, color = 'black'),
+            axis.text.x = element_text(size = 12, color = 'black'),
+            axis.text.y = element_text(size = 12, color = 'black'),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"))
+
+ggplotly(plot_dt)
+```
+
+Now, we can observe detailed metrics from this model and compare the results with the model using the default threshold. 
+
+```{r}
+# Classify a probability value into target classes.
+rf_table <- rf_table %>% 
+  mutate(tuning_pred = as.factor(ifelse(bank_pprob >= 0.4, "yes", "no")))
+
+# Create confusion matrix
+con_rf_adj <- confusionMatrix(rf_table$tuning_pred, bank_test$y, positive="yes")
+```
+
+
+```{r, echo=FALSE}
+
+# Model t= 0.5 
+m <- as.data.frame(con_rf_test $overall[1])
+colnames(m) <- c("Model t = 0.5")
+n<- as.data.frame(con_rf_test $byClass[1:3])
+colnames(n) <- c("Model t = 0.5")
+mn<-round(rbind(m,n),4)
+
+# Model t =0.62
+o <- as.data.frame(con_rf_adj$overall[1])
+colnames(o) <- c("Model t = 0.4")
+p<- as.data.frame(con_rf_adj$byClass[1:3])
+colnames(p) <- c("Model t = 0.4")
+op<-round(rbind(o,p),4)
+
+class7 <- cbind(op,mn)
+rmarkdown::paged_table(class7)
+
+```
+
+> Insight: As illustrated in the plot, the intersection between precision and sensitivity at 0.40 leads to a lower value of accuracy, specificity and precision. However, the trade-off is that value of the sensitivity will increase. We will choose the model with default threshold as this model produces a high value of accuracy. 
+
+# Conclusion 
+
+Below table shows the comparison between three models. 
+
+```{r, echo=FALSE}
+a <- as.data.frame(con_naive_test $overall[1])
+colnames(a) <- c("Naive Bayes")
+b<- as.data.frame(con_naive_test $byClass[1:3])
+colnames(b) <- c("Naive Bayes")
+auc <- auc_naive@y.values[[1]]
+naive <-round(rbind(a,b,auc),4)
+row.names(naive)[5] <- "AUC"  
+
+c <- as.data.frame(con_dt_test $overall[1])
+colnames(c) <- c("Decision Tree")
+d<- as.data.frame(con_dt_test $byClass[1:3])
+colnames(d) <- c("Decision Tree")
+auc_dt <- auc_dt@y.values[[1]]
+dt <-round(rbind(c,d,auc_dt),4)
+row.names(dt)[5] <- "AUC"  
+
+e <- as.data.frame(con_rf_test $overall[1])
+colnames(e) <- c("Random Forest (K-Folds)")
+f<- as.data.frame(con_rf_test $byClass[1:3])
+colnames(f) <- c("Random Forest (K-Folds)")
+auc_rf <- auc_rf@y.values[[1]]
+rf<-round(rbind(e,f,auc_rf),4)
+row.names(rf)[5] <- "AUC" 
+
+compare <- cbind(naive, dt, rf)
+rmarkdown::paged_table(compare)
+```
+> Insight: 
+>
+- The summary table shows that the model with Random Forest using K-fold cross-validation produces the highest values of accuracy. It implies that this model is appropriate to be used to correctly predict the customer's preference toward the term deposit (product). 
+- Since the model with Random Forest also has the highest value of precision, this model can be used to reduce the labour cost by avoiding calling uninterested customers. 
+- However, if the objective of the bank is to increase the number of customers and does not want to lose any opportunities, the model with Naive Bayes is the appropriate model to be used. It is confirmed by the highest value of sensitivity.
+- To be concluded, the model with Random Forest with K-fold cross-validation is the best model for our project objective, confirmed by the highest value of accuracy and AUC. 
+
+
+# References 
+
+1. [Decision Tree Wikipedia](https://en.wikipedia.org/wiki/Decision_tree_learning)
+2. [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier)
+3. [Performance Trade-Off Code Source](https://rpubs.com/nabiilahardini/wine-ndf)
+4. [Random Forest Classifier](https://towardsdatascience.com/understanding-random-forest-58381e0602d2)
+5. [Source of The Intro Picture](www.bankbound.com/blog/bank-advertising-ideas/)
+6. [Synthetic Data Generation](https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/)
+7. [The Financial Brand](https://thefinancialbrand.com/36606/bank-marketing-budgets-2014/)
+8. [The K-Fold Cross Validation](https://medium.datadriveninvestor.com/k-fold-cross-validation-6b8518070833)
+9. [The ROC](https://ncss-wpengine.netdna-ssl.com/wp-content/themes/ncss/pdf/Procedures/NCSS/Comparing_Two_ROC_Curves-Paired_Design.pdf)
+10. [The UCI Dataset](http://archive.ics.uci.edu/ml/datasets/Bank+Marketing#)
+
+
+
+
