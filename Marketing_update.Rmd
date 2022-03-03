@@ -120,7 +120,8 @@ The output shows there are no missing values in dataframe. The dataframe contain
 
 The below plots show frequency of each categorical variables. 
 
-```{r warning=FALSE, echo= FALSE, message=FALSE}
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 
 c.marital <- as.data.frame(prop.table(table(bank$marital)))
 
@@ -661,43 +662,68 @@ ggplotly(plot_naive)
 
 [Based on Wikipedia](https://en.wikipedia.org/wiki/Decision_tree_learning), decision tree is the most popular machine learning algorithms due to its simplicity and intelligibility. Decision tree can be used to predict when the target variable is the class (discrete) or a real number (numeric). The classification tree structures consists of leaves, which represent class labels, and branches, which represent connection of variables that lead to those class labels. The main idea of the decision tree is to obtain variables that returns the highest information gains or the most homogeneous branches. 
 
-## Modelling
+## Modelling and Pruning
 
-Now, we create a decision tree model by using `rpart()`. 
+Now, we create a decision tree model by using `rpart()` and we set the cp value at 0, maxdepth at 5, minsplit at 5 and minibucket at 5 so that the tree can grow. A short explanation for each item: 
+
+- Minsplit: the minimum number of samples that must exist in a node for a split to proceed.
+- Maxdepth; The maximum depth at the final tree.
+- Cp (complexity parameter): The objective of this parameter is to save computing time by pruning off splits that are not worthwhile. 
 
 ```{r}
 set.seed(100)
 
 # Create a decision tree model 
-model_dt <- rpart(formula = y ~., data = bank_train_up, method = "class")
+model_dt <- rpart(formula = y ~., 
+                  data = bank_train_up, 
+                  method = "class",
+                  control = rpart.control(cp = 0, maxdepth =5, 
+                                          minsplit = 5, minbucket = 10))
 ```
 
-
-## Interpretation 
-
-We can visualize decision tree by using function `fancyRpartPlot()`. Then, we observe the important variables in the model by using function `vip()`
+We can visualize the decision tree by using the function `rpart.plot()`
 
 ```{r}
 # Visualize the decision tree
-fancyRpartPlot(palettes = "Reds", model_dt, type=4, sub = NULL)
-
-# Importance Variable
-vip(model_dt, num_features = 10, scale = TRUE, mapping = aes_string(fill = "Variable"), aesthetics = list(fill = "#007200"))
-
+rpart.plot(model_dt, type=1, sub = NULL)
 ```
 
-> Insight : 
->
-- Based on the decision tree, the poutcome becomes the root of a tree, implying that this variable has the highest information gain. 
-- The model is considered simple with five interior nodes and seven terminal nodes. 
-- The potcome, month, contact and age are the most important predictors of y.
+The model is considered a complex tree because it has too many branches and layers. It can result in overfitting of training data. We can validate it by using pruning. The objective is to reduce the size of the decision tree by removing the part of the tree that are redundant and not important. There are two methods in pruning, which are pre-pruning and post-pruning. In this project, we focus on post-pruning, which allows the tree to classify the training set perfectly and then prunes the tree. 
+
+In this section, we try to find the optimum complexity parameter (cp). As mentioned above, this parameter is to control the size of the decision tree. If the value of cp is less than the cost of adding other variables to the tree, then the tree stops growing. We set the original tree to its maximum depth (cp = 0) so that the tree can grow. Then, we can find the optimum value of cp by observing the output from `plotcp` and `printcp` functions. The information consists of the number of splits, the mean of cross-validation error (xerror), and the standard deviation of cross-validation error (xstd). 
+
+```{r}
+# Plot relative cross validation error and cp
+plotcp(model_dt)
+
+# Observe the cross-validation error, cp and standard deviation
+printcp(model_dt)
+```
+
+The common way to find the optimum cp is using the best tree which has the lowest mean cross-validation error (xerror) or the simplest tree within one standard error (xstd) of the best tree error. 
+
+Based on the output above, the best tree is in row 10 (17 splits) because this tree has the lowest xerror (0.60287). However, the tree in row 5 (8 splits) does effectively the similar job because the xerror in row 5 (0.60616) is within one standard error of the best tree xerror (0.60287 + 0.0036316 = 0.6065016). Based on this explanation, the optimum complexity parameter is 0.002066892. 
+
+Now, we create the prune model by using function `prune()` from `model_dt` with cp set at 0.002066892.
+
+```{r}
+set.seed(100)
+
+# Create a prune model based on cp_otimal
+model_dt_prune <- prune(tree=model_dt, cp=0.002066892)
+
+# Plot the model prune
+rpart.plot(model_dt_prune, type=1, sub = NULL)
+```
+
+>Insight : With pruning, the decision tree model is much simpler and easy to understand. The putcome becomes a root node. There are 8 interior nodes and 10 terminal nodes. Thus, we will use `model_dt_prune` as our decision tree model. 
 
 ## Prediction 
 
 The prediction can be generated by using function `predict()` with `bank_test` as our newdata. 
 
 ```{r}
-pred_dt <-predict(object=model_dt, newdata=bank_test, type="class")
+pred_dt <-predict(object=model_dt_prune, newdata=bank_test, type="class")
 ```
 
 ## Model Evaluation 
@@ -706,7 +732,7 @@ pred_dt <-predict(object=model_dt, newdata=bank_test, type="class")
 
 ```{r}
 # Create a probability prediction from `model_dt`
-prob_dt <- predict(object = model_dt, newdata=bank_test, type="prob")
+prob_dt <- predict(object = model_dt_prune, newdata=bank_test, type="prob")
 
 # Create a prob and label from prob_dt. 
 roc_dt <- data.frame(prob=prob_dt[,2],
@@ -735,11 +761,12 @@ auc_dt@y.values[[1]]
 con_dt_test <- confusionMatrix(data=pred_dt, reference=bank_test$y, positive="yes")
 con_dt_test
 ```
+
 > Insights:
 >
-- The accuracy value of 0.7954, impliying that the model can predict 79.54% of the test data correctly.
-- The precision value shows 0.2938, implying that 29.38% of the correctly predicted cases turned out to be positive. It also means that the model is bad at classifying the positive predicted cases.
-- The sensitivity and specificity values are 53.94% and 82.92%, respectively. It implies that most actual negative classes are correctly classified, as opposed to the positive class.
+- The accuracy value of 0.8706, impliying that the model can predict 87.06% of the test data correctly.
+- The precision value shows 0.4433, implying that 44.33% of the correctly predicted cases turned out to be positive. It also means that the model is bad at classifying the positive predicted cases.
+- The sensitivity and specificity values are 43.49% and 92.81%, respectively. It implies that most actual negative classes are correctly classified, as opposed to the positive class.
 
 ## Over or Underfitting
 
@@ -747,7 +774,7 @@ We will observe our model for under and overfitting conditions. This can be done
 
 ```{r}
 # Model prediction based on data train
-pred_dt_train <- predict(object=model_dt, newdata=bank_train_up, type="class")
+pred_dt_train <- predict(object=model_dt_prune, newdata=bank_train_up, type="class")
 
 # Confusion matrix data train
 con_dt_train <- confusionMatrix(pred_dt_train,
@@ -773,6 +800,7 @@ op<-round(rbind(o,p),4)
 class4 <- cbind(op,mn)
 rmarkdown::paged_table(class4)
 ```
+
 > Insight: In terms of accuracy, sensitivity and specificity, the model is relatively optimum. However, if we depend on the precision value, the model will be categorized as an overfitted model because the precision value in test data is significantly lower than in train data. 
 
 ## Performance Trade-Off
@@ -842,7 +870,7 @@ Now, we can observe detailed metrics from this model and compare the results wit
 ```{r}
 # Classify a probability value into target classes.
 dt_table <- dt_table %>% 
-  mutate(tuning_pred = as.factor(ifelse(bank_pprob >= 0.4, "yes", "no")))
+  mutate(tuning_pred = as.factor(ifelse(bank_pprob >= 0.43, "yes", "no")))
 
 con_dt_adj <- confusionMatrix(dt_table$tuning_pred, bank_test$y, positive="yes")
 ```
@@ -852,23 +880,24 @@ con_dt_adj <- confusionMatrix(dt_table$tuning_pred, bank_test$y, positive="yes")
 
 # Model t= 0.5 
 m <- as.data.frame(con_dt_test $overall[1])
-colnames(m) <- c("Model t = 0.5")
+colnames(m) <- c("Model t = 0.50")
 n<- as.data.frame(con_dt_test $byClass[1:3])
-colnames(n) <- c("Model t = 0.5")
+colnames(n) <- c("Model t = 0.50")
 mn<-round(rbind(m,n),4)
 
 # Model t =0.62
 o <- as.data.frame(con_dt_adj$overall[1])
-colnames(o) <- c("Model t = 0.4")
+colnames(o) <- c("Model t = 0.43")
 p<- as.data.frame(con_dt_adj$byClass[1:3])
-colnames(p) <- c("Model t = 0.4")
+colnames(p) <- c("Model t = 0.43")
 op<-round(rbind(o,p),4)
 
 class5 <- cbind(op,mn)
 rmarkdown::paged_table(class5)
 
 ```
-> Insight: As illustrated in the plot, the intersection between specificity and sensitivity at 0.4 has a similar performance metrics value with model with threshold at 0.5. 
+
+> Insight: As illustrated in the plot, the intersection between specificity and sensitivity at 0.43 has a similar performance metrics value with model with threshold at 0.50. 
 
 # Random Forest 
 
@@ -1141,10 +1170,11 @@ rmarkdown::paged_table(compare)
 ```
 > Insight: 
 >
-- The summary table shows that the model with Random Forest using K-fold cross-validation produces the highest values of accuracy. It implies that this model is appropriate to be used to correctly predict the customer's preference toward the term deposit (product). 
-- Since the model with Random Forest also has the highest value of precision, this model can be used to reduce the labour cost by avoiding calling uninterested customers. 
-- However, if the objective of the bank is to increase the number of customers and does not want to lose any opportunities, the model with Naive Bayes is the appropriate model to be used. It is confirmed by the highest value of sensitivity.
-- To be concluded, the model with Random Forest with K-fold cross-validation is the best model for our project objective, confirmed by the highest value of accuracy and AUC. 
+- The summary table shows that the model with Random Forest using K-fold cross-validation and Decision Tree produce a high values of accuracy. It implies that this models are appropriate to be used to correctly predict the customer's preference toward the term deposit (product). 
+- All models have a relatively low precision value. It implies that the models bad at minimizing false positives. Since the model with Random Forest has the highest value of precision, this model might be used to reduce the labour cost by avoiding calling uninterested customers. However, some improvement is acquired to increase the value. 
+- If the objective of the bank is to increase the number of customers and does not want to lose any opportunities, the model with Naive Bayes is the appropriate model to be used. It is confirmed by the highest value of sensitivity.
+- To be concluded, the model with Random Forest with K-fold cross-validation is the best model for our project objective, confirmed by the highest values of accuracy and AUC. 
+
 
 
 # References 
